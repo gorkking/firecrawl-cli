@@ -762,11 +762,7 @@ function authNotes(
     ];
   }
 
-  const keyless = succeeded.filter((result) => result.auth === 'keyless');
-  if (keyless.length === 0) return [];
-  return [
-    `${keyless.map((result) => result.name).join(' and ')} cannot expand environment variables in MCP config, so ${keyless.length > 1 ? 'they were' : 'it was'} configured keyless.`,
-  ];
+  return [];
 }
 
 function reportMcpResults(
