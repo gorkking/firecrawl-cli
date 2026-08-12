@@ -45,7 +45,6 @@ import {
   type McpAuthMode,
   type McpContext,
   type McpLauncherId,
-  type McpScope,
   type McpTargetId,
 } from '../utils/mcp-clients';
 import { setupMcpClient, type McpClientResult } from '../utils/mcp-install';
@@ -63,8 +62,6 @@ type ResolvedMcpAgent =
 
 export interface SetupOptions {
   global?: boolean;
-  /** Explicitly install MCP into project scope. */
-  project?: boolean;
   agent?: string;
   undo?: boolean;
   /** Skip the interactive harness picker and apply to all agents. */
@@ -349,7 +346,7 @@ async function handleSetupBundle(options: SetupOptions): Promise<void> {
 
   const bundleOptions = {
     ...options,
-    global: options.project ? undefined : (options.global ?? true),
+    global: options.global ?? true,
   };
   for (const integration of integrations) {
     await handleSetupCommand(integration, bundleOptions);
@@ -555,6 +552,9 @@ export async function installMcp(
 ): Promise<void> {
   const apiKey = options.keyless ? undefined : getApiKey();
   const resolvedAgent = resolveMcpAgent(options.agent);
+  // Same rule as installMcpClients: a stored key cannot go into agent config,
+  // so --agent hermes/openclaw fall back to keyless just like --hermes/--openclaw.
+  const keyless = !isEnvironmentBackedApiKey(apiKey, runtimeEnv);
 
   if (resolvedAgent.kind === 'skills-only') {
     // Skills for this agent have already installed by this point; ending the
@@ -566,13 +566,11 @@ export async function installMcp(
   }
 
   if (resolvedAgent.kind === 'hermes') {
-    await installHermesMcp(runtimeEnv, options.keyless);
+    await installHermesMcp(runtimeEnv, keyless, Boolean(options.quiet));
     return;
   }
   if (resolvedAgent.kind === 'openclaw') {
-    // Hands the credential to a subprocess, so a stored key is not usable.
-    assertSubprocessSafeCredential(apiKey, runtimeEnv);
-    await installOpenClawMcp(runtimeEnv, options.keyless);
+    await installOpenClawMcp(runtimeEnv, keyless, Boolean(options.quiet));
     return;
   }
   if (resolvedAgent.kind === 'all-launchers') {
@@ -607,13 +605,11 @@ async function pickMcpClients(
   return checkbox<McpTargetId>({
     message: 'Which agents do you want to set up?',
     loop: false,
-    // Show every agent at once; the default page size would scroll the last
-    // ones out of view.
-    pageSize: ALL_MCP_TARGET_IDS.length,
-    choices: ALL_MCP_TARGET_IDS.map((id) => ({
+    pageSize: detected.length,
+    choices: detected.map((id) => ({
       name: mcpTargetName(id),
       value: id,
-      checked: detected.includes(id),
+      checked: true,
     })),
   });
 }
@@ -684,7 +680,6 @@ async function installMcpClients(
     env: runtimeEnv,
     auth,
   };
-  const scope: McpScope = options.project ? 'project' : 'global';
   // Prompts only make sense when someone is there to answer them.
   const nonInteractive = Boolean(options.yes) || !process.stdin.isTTY;
 
@@ -696,12 +691,12 @@ async function installMcpClients(
       ...(await detectMcpClients(ctx)),
       ...detectMcpLaunchers(ctx),
     ];
+    if (detected.length === 0 && !includeAllLaunchers) {
+      throw new Error(
+        'No coding agents detected. Pass an agent flag such as --claude or --cursor.'
+      );
+    }
     if (nonInteractive) {
-      if (detected.length === 0 && !includeAllLaunchers) {
-        throw new Error(
-          'No coding agents detected. Pass an agent flag such as --claude or --cursor.'
-        );
-      }
       selected = detected;
     } else {
       selected = await pickMcpClients(detected);
@@ -731,7 +726,7 @@ async function installMcpClients(
     results.push(
       isMcpLauncherId(id)
         ? await setupMcpLauncher(id, ctx, runtimeEnv)
-        : await setupMcpClient(id, { scope, rules, ctx })
+        : await setupMcpClient(id, { rules, ctx })
     );
   }
 
@@ -769,7 +764,7 @@ function authNotes(
 
   if (!hasApiKey) {
     return [
-      'Running keyless (search, scrape, parse). Run "firecrawl login" and rerun to unlock the full tool surface.',
+      `Running keyless (search, scrape, parse). Export ${ENV_API_KEY} where your agents run, then rerun to authenticate.`,
     ];
   }
 
