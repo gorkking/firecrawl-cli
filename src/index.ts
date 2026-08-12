@@ -2242,7 +2242,6 @@ const setupCommand = program
     '[subcommand]',
     'What to set up: "skills", "workflows", "mcp", or "defaults"; omit for an interactive installer'
   )
-  .option('-g, --global', 'Install globally (user-level)')
   .option(
     '--project',
     'For "mcp", install into project scope (stored API keys are never written to project files)'
@@ -2269,6 +2268,12 @@ for (const id of ALL_MCP_TARGET_IDS) {
   setupCommand.option(`--${id}`, `Set up ${mcpTargetName(id)} (mcp)`);
 }
 
+// `-g` is the old way to ask for the global scope that is now the default.
+// Kept so existing scripts keep running, hidden because it does nothing.
+setupCommand.addOption(
+  new Option('-g, --global', 'Deprecated; global is the default').hideHelp()
+);
+
 setupCommand
   .option('--rules', 'Install rules that prefer Firecrawl for web work (mcp)')
   .option('--no-rules', 'Skip the rules prompt and install MCP only (mcp)')
@@ -2284,6 +2289,11 @@ Examples:
 `
   )
   .action(async (subcommand: SetupSubcommand, options) => {
+    if (options.global) {
+      console.error(
+        'Note: -g/--global is deprecated for setup. Global is the default; use --project for project scope.'
+      );
+    }
     await handleSetupCommand(subcommand, {
       ...options,
       clients: ALL_MCP_TARGET_IDS.filter((id) => options[id] === true),
