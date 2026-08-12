@@ -29,6 +29,7 @@ import {
   type WebAgent,
 } from '../utils/web-defaults';
 import {
+  ALL_MCP_CLIENT_IDS,
   ALL_MCP_LAUNCHER_IDS,
   ALL_MCP_TARGET_IDS,
   detectMcpClients,
@@ -673,7 +674,9 @@ async function installMcpClients(
   // Prompts only make sense when someone is there to answer them.
   const nonInteractive = Boolean(options.yes) || !process.stdin.isTTY;
 
-  let selected = explicitIds ?? options.clients;
+  let selected = includeAllLaunchers
+    ? [...ALL_MCP_CLIENT_IDS]
+    : (explicitIds ?? options.clients);
   if (!selected || selected.length === 0) {
     const detected: McpTargetId[] = [
       ...(await detectMcpClients(ctx)),
@@ -695,8 +698,8 @@ async function installMcpClients(
     }
   }
 
-  // `--agent all` reaches every launch integration whether or not it looks
-  // installed, which is what the flag has always meant.
+  // `--agent all` reaches every integration whether or not it looks installed,
+  // which is what the flag has always meant.
   if (includeAllLaunchers) {
     selected = [
       ...selected.filter((id) => !isMcpLauncherId(id)),
@@ -780,6 +783,12 @@ function reportMcpResults(
           ? `  ${red}✗${reset} Firecrawl MCP failed for ${result.name}: ${result.mcpDetail}`
           : `  ${green}✓${reset} Firecrawl MCP configured for ${result.name}`
       );
+    }
+    for (const note of authNotes(results, ctx, hasApiKey)) {
+      console.log(`  ${dim}${note}${reset}`);
+    }
+    if (succeeded.length === 0) {
+      throw new Error('Failed to configure Firecrawl MCP.');
     }
     return;
   }
