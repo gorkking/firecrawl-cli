@@ -2254,6 +2254,7 @@ const setupCommand = program
     '--keyless',
     'Configure anonymous hosted MCP even when an API key is stored'
   )
+  .option('--oauth', 'Point agents at the sign-in endpoint instead (mcp)')
   .option(
     '--undo',
     'Undo setup defaults by re-enabling native web tools where supported'
@@ -2278,6 +2279,7 @@ setupCommand
     `
 Examples:
   $ firecrawl setup mcp                      # pick agents, then choose rules
+  $ firecrawl setup mcp --oauth              # sign in from each agent's browser
   $ firecrawl setup mcp --claude --cursor    # skip the picker
   $ firecrawl setup mcp --yes                # every detected agent, MCP only
   $ firecrawl setup mcp --yes --rules        # every detected agent, with rules
