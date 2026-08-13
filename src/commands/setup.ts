@@ -33,6 +33,7 @@ import {
   detectMcpClients,
   detectMcpLaunchers,
   isMcpLauncherId,
+  MCP_LAUNCHER_RULES,
   mcpTargetName,
   resolveMcpClientId,
   type McpAuthMode,
@@ -40,7 +41,11 @@ import {
   type McpLauncherId,
   type McpTargetId,
 } from '../utils/mcp-clients';
-import { setupMcpClient, type McpClientResult } from '../utils/mcp-install';
+import {
+  appendRuleSection,
+  setupMcpClient,
+  type McpClientResult,
+} from '../utils/mcp-install';
 
 export type SetupSubcommand = 'skills' | 'workflows' | 'mcp' | 'defaults';
 
@@ -616,7 +621,8 @@ async function pickMcpClients(
 async function setupMcpLauncher(
   id: McpLauncherId,
   ctx: McpContext,
-  runtimeEnv: NodeJS.ProcessEnv
+  runtimeEnv: NodeJS.ProcessEnv,
+  rules: boolean
 ): Promise<McpClientResult> {
   const keyless = ctx.auth !== 'env';
   const result: McpClientResult = {
@@ -643,6 +649,27 @@ async function setupMcpLauncher(
     result.mcpStatus = 'configured';
   } catch (error) {
     result.mcpDetail = error instanceof Error ? error.message : String(error);
+  }
+
+  const rule = MCP_LAUNCHER_RULES[id];
+  if (!rules || !rule) return result;
+
+  const rulePath = rule.globalPath(ctx);
+  // The launcher creates this file itself on first run, seeded with its own
+  // instructions. Creating it here first would leave the user with our section
+  // and none of that, so the rule waits for a workspace that exists.
+  if (!existsSync(rulePath)) {
+    result.ruleStatus = 'skipped';
+    result.ruleDetail = rulePath;
+    return result;
+  }
+
+  try {
+    result.ruleStatus = await appendRuleSection(rulePath, rule.content);
+    result.ruleDetail = rulePath;
+  } catch (error) {
+    result.ruleStatus = 'failed';
+    result.ruleDetail = error instanceof Error ? error.message : String(error);
   }
   return result;
 }
@@ -722,7 +749,7 @@ async function installMcpClients(
   for (const id of selected) {
     results.push(
       isMcpLauncherId(id)
-        ? await setupMcpLauncher(id, ctx, runtimeEnv)
+        ? await setupMcpLauncher(id, ctx, runtimeEnv, rules)
         : await setupMcpClient(id, { rules, ctx })
     );
   }
