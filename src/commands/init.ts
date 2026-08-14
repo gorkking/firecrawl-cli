@@ -287,7 +287,8 @@ function parseSkillCount(output: string): number | null {
  */
 function printNextSteps(
   skillCount: number | null,
-  defaultsHandled = false
+  defaultsHandled = false,
+  mcpInstalled = false
 ): void {
   const arrow = `${dim}→${reset}`;
   const summary =
@@ -311,9 +312,13 @@ function printNextSteps(
     `    ${arrow} ${bold}Interact${reset}  "Go to amazon.com, search keyboards, filter by Prime"  ${dim}firecrawl interact "search keyboards, filter by Prime"${reset}`
   );
   console.log('');
-  console.log(
-    `  ${arrow} ${dim}Add MCP:     ${reset} ${bold}firecrawl setup mcp${reset}`
-  );
+  // Only for someone who does not have it yet: the install already reported
+  // its own ✓ a few lines up.
+  if (!mcpInstalled) {
+    console.log(
+      `  ${arrow} ${dim}Add MCP:     ${reset} ${bold}firecrawl setup mcp${reset}`
+    );
+  }
   if (!defaultsHandled) {
     console.log(
       `  ${arrow} ${dim}Default web:${reset} ${bold}firecrawl setup defaults${reset}`
@@ -508,7 +513,15 @@ export async function stepAuth(options: InitOptions): Promise<boolean> {
   }
 }
 
-async function stepIntegrations(options: InitOptions): Promise<number | null> {
+interface IntegrationsResult {
+  skillCount: number | null;
+  /** Drives the next-steps block: a successful install drops "Add MCP". */
+  mcpInstalled: boolean;
+}
+
+async function stepIntegrations(
+  options: InitOptions
+): Promise<IntegrationsResult> {
   const { checkbox, confirm } = await import('@inquirer/prompts');
 
   const wantIntegrations = await confirm({
@@ -516,7 +529,7 @@ async function stepIntegrations(options: InitOptions): Promise<number | null> {
     default: true,
   });
 
-  if (!wantIntegrations) return null;
+  if (!wantIntegrations) return { skillCount: null, mcpInstalled: false };
 
   const integrations = await checkbox<string>({
     message: 'Which integrations?',
@@ -532,7 +545,10 @@ async function stepIntegrations(options: InitOptions): Promise<number | null> {
         checked: true,
       },
       {
-        name: 'MCP — install firecrawl MCP server for editors (Cursor, Claude Code, VS Code)',
+        // Named like the skills entry: setup writes to whatever it detects, so
+        // listing a few agents here would undersell it and listing all seven
+        // would not fit.
+        name: 'MCP — install the Firecrawl MCP server for detected coding agents',
         value: 'mcp',
       },
       {
@@ -544,7 +560,7 @@ async function stepIntegrations(options: InitOptions): Promise<number | null> {
 
   if (integrations.length === 0) {
     console.log(`  ${dim}No integrations selected.${reset}\n`);
-    return null;
+    return { skillCount: null, mcpInstalled: false };
   }
 
   // If skills/workflows are being installed, let the user route them to a
@@ -560,6 +576,7 @@ async function stepIntegrations(options: InitOptions): Promise<number | null> {
         : null;
 
   let totalSkills: number | null = null;
+  let mcpInstalled = false;
   for (const integration of integrations) {
     switch (integration) {
       case 'skills': {
@@ -616,6 +633,7 @@ async function stepIntegrations(options: InitOptions): Promise<number | null> {
             keyless: !environmentBacked,
           });
           console.log(`  ${green}✓${reset} MCP server installed`);
+          mcpInstalled = true;
         } catch (error) {
           const message =
             error instanceof Error
@@ -640,7 +658,7 @@ async function stepIntegrations(options: InitOptions): Promise<number | null> {
       }
     }
   }
-  return totalSkills;
+  return { skillCount: totalSkills, mcpInstalled };
 }
 
 /**
@@ -944,8 +962,9 @@ export async function handleInitCommand(
 
   // Step 3: Integrations (skills, MCP, env)
   let skillCount: number | null = null;
+  let mcpInstalled = false;
   if (!options.skipSkills) {
-    skillCount = await stepIntegrations(options);
+    ({ skillCount, mcpInstalled } = await stepIntegrations(options));
   }
 
   // Step 4: Template
@@ -954,7 +973,7 @@ export async function handleInitCommand(
   // Step 5: Default web provider
   await stepDefaults();
 
-  printNextSteps(skillCount, true);
+  printNextSteps(skillCount, true, mcpInstalled);
 }
 
 async function runNonInteractive(options: InitOptions): Promise<void> {
